@@ -6,53 +6,66 @@
 ###
 
 do ($ = jQuery) ->
-  defaults =
-    topSpacing: 0
-    bottomSpacing: 0
-    className: "is-sticky"
-    wrapperClassName: "sticky-wrapper"
-    center: false
-    getWidthFrom: ""
+
+  DEFAULTS =
+    topSpacing:       0
+    bottomSpacing:    0
+    className:        'is-sticky'
+    wrapperClassName: 'sticky-wrapper'
+    center:           false
+    getWidthFrom:     ''
 
   $window = $(window)
   $document = $(document)
   sticked = []
   windowHeight = $window.height()
-  scroller = ->
-    scrollTop = $window.scrollTop()
-    documentHeight = $document.height()
-    dwh = documentHeight - windowHeight
-    extra = (if (scrollTop > dwh) then dwh - scrollTop else 0)
-    i = 0
 
-    while i < sticked.length
-      s = sticked[i]
-      elementTop = s.stickyWrapper.offset().top
-      etse = elementTop - s.topSpacing - extra
-      if scrollTop <= etse
-        if s.currentTop isnt null
-          s.stickyElement.css("position", "").css "top", ""
-          s.stickyElement.parent().removeClass s.className
-          s.currentTop = null
-      else
-        newTop = documentHeight - s.stickyElement.outerHeight() - s.topSpacing - s.bottomSpacing - scrollTop - extra
-        if newTop < 0
-          newTop = newTop + s.topSpacing
+  class StickyView extends Backbone.View
+
+    initialize: ->
+
+    scroll: ->
+      scrollTop = $window.scrollTop()
+      documentHeight = $document.height()
+      dwh = documentHeight - windowHeight
+      extra = (if (scrollTop > dwh) then dwh - scrollTop else 0)
+      i = 0
+
+      while i < sticked.length
+        s = sticked[i]
+        elementTop = s.stickyWrapper.offset().top
+        etse = elementTop - s.topSpacing - extra
+        if scrollTop <= etse
+          if s.currentTop isnt null
+            s.stickyElement.css("position", "").css "top", ""
+            s.stickyElement.parent().removeClass s.className
+            s.currentTop = null
         else
-          newTop = s.topSpacing
-        unless s.currentTop is newTop
-          s.stickyElement.css("position", "fixed").css "top", newTop
-          s.stickyElement.css "width", $(s.getWidthFrom).width()  if typeof s.getWidthFrom isnt "undefined"
-          s.stickyElement.parent().addClass s.className
-          s.currentTop = newTop
-      i++
+          newTop = documentHeight - s.stickyElement.outerHeight() - s.topSpacing - s.bottomSpacing - scrollTop - extra
+          if newTop < 0
+            newTop = newTop + s.topSpacing
+          else
+            newTop = s.topSpacing
+          unless s.currentTop is newTop
+            s.stickyElement.css("position", "fixed").css "top", newTop
+            s.stickyElement.css "width", $(s.getWidthFrom).width()  if typeof s.getWidthFrom isnt "undefined"
+            s.stickyElement.parent().addClass s.className
+            s.currentTop = newTop
+        i++
 
-  resizer = ->
-    windowHeight = $window.height()
+    resize: ->
+      windowHeight = $window.height()
+
+    $window: -> @$el
+
+    $document: ->
+      @$_document ||= $(document)
+
+  stickyView = new StickyView(el: window)
 
   methods =
     init: (options) ->
-      o = $.extend(defaults, options)
+      o = $.extend(DEFAULTS, options)
       @each ->
         stickyElement = $(this)
         stickyId = stickyElement.attr("id")
@@ -77,25 +90,19 @@ do ($ = jQuery) ->
           className: o.className
           getWidthFrom: o.getWidthFrom
 
+    update: stickyView.scroll
 
+  $window
+    .scroll(stickyView.scroll)
+    .resize(stickyView.resize)
 
-    update: scroller
-
-
-  # should be more efficient than using $window.scroll(scroller) and $window.resize(resizer):
-  if window.addEventListener
-    window.addEventListener "scroll", scroller, false
-    window.addEventListener "resize", resizer, false
-  else if window.attachEvent
-    window.attachEvent "onscroll", scroller
-    window.attachEvent "onresize", resizer
-  $.fn.sticky = (method) ->
+  $.fn.sticky = (method, args...) ->
     if methods[method]
-      methods[method].apply this, Array::slice.call(arguments_, 1)
+      methods[method].apply(@, args)
     else if typeof method is "object" or not method
-      methods.init.apply this, arguments_
+      methods.init.apply(@, arguments)
     else
       $.error "Method " + method + " does not exist on jQuery.sticky"
 
   $ ->
-    setTimeout scroller, 0
+    setTimeout(stickyView.scroll, 0)
