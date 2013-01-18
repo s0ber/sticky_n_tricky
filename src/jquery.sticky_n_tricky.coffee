@@ -5,104 +5,210 @@
   written by Anthony Garand.
 ###
 
-do ($ = jQuery) ->
+@StickyAndTricky = {}
 
-  DEFAULTS =
-    topSpacing:       0
-    bottomSpacing:    0
-    className:        'is-sticky'
-    wrapperClassName: 'sticky-wrapper'
-    center:           false
-    getWidthFrom:     ''
+DEFAULT_OPTIONS =
+  padding: 0
+  to:      'top'
 
-  $window = $(window)
-  $document = $(document)
-  sticked = []
-  windowHeight = $window.height()
+class StickyAndTricky.StickyView extends Backbone.View
 
-  class StickyView extends Backbone.View
+  enabled: false
 
-    initialize: ->
+  initialize: ->
+    Object.merge(@options, DEFAULT_OPTIONS, false, false)
+    @setup()
 
-    scroll: ->
-      scrollTop = $window.scrollTop()
-      documentHeight = $document.height()
-      dwh = documentHeight - windowHeight
-      extra = (if (scrollTop > dwh) then dwh - scrollTop else 0)
-      i = 0
+  # Setup sticky
+  setup: ->
+    return unless @isCanBeSticky()
 
-      while i < sticked.length
-        s = sticked[i]
-        elementTop = s.stickyWrapper.offset().top
-        etse = elementTop - s.topSpacing - extra
-        if scrollTop <= etse
-          if s.currentTop isnt null
-            s.stickyElement.css("position", "").css "top", ""
-            s.stickyElement.parent().removeClass s.className
-            s.currentTop = null
-        else
-          newTop = documentHeight - s.stickyElement.outerHeight() - s.topSpacing - s.bottomSpacing - scrollTop - extra
-          if newTop < 0
-            newTop = newTop + s.topSpacing
-          else
-            newTop = s.topSpacing
-          unless s.currentTop is newTop
-            s.stickyElement.css("position", "fixed").css "top", newTop
-            s.stickyElement.css "width", $(s.getWidthFrom).width()  if typeof s.getWidthFrom isnt "undefined"
-            s.stickyElement.parent().addClass s.className
-            s.currentTop = newTop
-        i++
+    @enabled = true
 
-    resize: ->
-      windowHeight = $window.height()
+    @stickyWindow().add(@)
 
-    $window: -> @$el
+    @wrapEl()
+    @copyStylesToWrapper()
+    @fixWidth()
 
-    $document: ->
-      @$_document ||= $(document)
+    @stickyWindow().recalculate([@])
 
-  stickyView = new StickyView(el: window)
+  # Restore
+  restore: ->
+    @enabled = false
 
-  methods =
-    init: (options) ->
-      o = $.extend(DEFAULTS, options)
-      @each ->
-        stickyElement = $(this)
-        stickyId = stickyElement.attr("id")
-        wrapper = $("<div></div>").attr("id", stickyId + "-sticky-wrapper").addClass(o.wrapperClassName)
-        stickyElement.wrapAll wrapper
-        if o.center
-          stickyElement.parent().css
-            width: stickyElement.outerWidth()
-            marginLeft: "auto"
-            marginRight: "auto"
+    @clearPosition()
+    @unwrapEl()
+    @restoreWidth()
 
-        stickyElement.css(float: "none").parent().css float: "right"  if stickyElement.css("float") is "right"
-        stickyWrapper = stickyElement.parent()
-        stickyWrapper.css height: stickyElement.outerHeight()
-        stickyElement.css width: stickyElement.width()
-        sticked.push
-          topSpacing: o.topSpacing
-          bottomSpacing: o.bottomSpacing
-          stickyElement: stickyElement
-          currentTop: null
-          stickyWrapper: stickyWrapper
-          className: o.className
-          getWidthFrom: o.getWidthFrom
+  # Check is window height is enough to stick el
+  isCanBeSticky: ->
+    @stickyWindow().haveEnoughSpace @$el.height()
 
-    update: stickyView.scroll
-
-  $window
-    .scroll(stickyView.scroll)
-    .resize(stickyView.resize)
-
-  $.fn.sticky = (method, args...) ->
-    if methods[method]
-      methods[method].apply(@, args)
-    else if typeof method is "object" or not method
-      methods.init.apply(@, arguments)
+  # Check is element should be enabled
+  applyNewWindowSize: ->
+    if @enabled
+      if @isCanBeSticky()
+        @$el.css(left: @wrapper().offset().left)
+      else
+        @restore()
     else
-      $.error "Method " + method + " does not exist on jQuery.sticky"
+      @setup()
 
-  $ ->
-    setTimeout(stickyView.scroll, 0)
+  # Calculate view position
+  calculatePosition: (args...) ->
+    return unless @enabled
+
+    if @isFixed(args...)
+      @setPosition if @options.to == 'top'
+        @newTop(args...)
+      else
+        @newBottom(args...)
+    else
+      @clearPosition()
+
+  # Set new position
+  setPosition: (position) ->
+    return if @currentPosition is position
+
+    @$el
+      .css(position: 'fixed')
+      .css(@options.to, position)
+    @currentPosition = position
+
+  # Reset position to original
+  clearPosition: ->
+    return unless @currentPosition?
+    @$el
+      .css(position: '')
+      .css(@options.to, '')
+
+    @currentPosition = null
+
+  # Returns new top position
+  newTop: (documentHeight, scrollTop, scrollBottom, extraGap) ->
+    top = documentHeight - @$el.outerHeight() - @options.padding - scrollTop - extraGap
+
+    # Hack for OSX "overscroll"
+    if top < 0
+      top + @options.padding
+    else
+      @options.padding
+
+  # Returns new bottom position
+  newBottom: (documentHeight, scrollTop, scrollBottom, extraGap) ->
+    @options.padding
+
+  # Is el position should be fixed
+  isFixed: (documentHeight, scrollTop, scrollBottom, extraGap) ->
+    if @options.to == 'top'
+      # TODO: WTF is etse?!
+      etse = @top() - @options.padding - extraGap
+      scrollTop > etse
+    else
+      scrollBottom < @bottom()
+
+  # Wrap el with div
+  wrapEl: ->
+    @$el.wrapAll('<div></div>')
+
+  # Unwrap el
+  unwrapEl: ->
+    @$el.unwrap()
+    @$_wrapper = null
+
+  # Returns absolute element top
+  top: ->
+    @wrapper().offset().top
+
+  # Returns bottom offset
+  bottom: ->
+    @wrapper().offset().top + @wrapper().outerHeight()
+
+  # Fix el width
+  fixWidth: ->
+    @$el.css(width: @$el.width())
+
+  # Restore el width
+  restoreWidth: ->
+    @$el.css(width: '')
+
+  # Copy css to wrapper
+  copyStylesToWrapper: ->
+    if @$el.css('float') is 'right'
+      @$el.css(float: 'none')
+      @wrapper().css(float: 'right')
+
+    @wrapper().css(height: @$el.outerHeight())
+
+  # Returns sticky wrapper
+  wrapper: ->
+    @$_wrapper ||= @$el.parent()
+
+  # Return current instance of StickyWindowView
+  stickyWindow: ->
+    StickyAndTricky.StickyWindowView.current
+
+# Sticky window view class
+class StickyAndTricky.StickyWindowView extends Backbone.View
+
+  events:
+    scroll: 'scroll'
+    resize: 'resize'
+
+  initialize: ->
+    @views = []
+    StickyAndTricky.StickyWindowView.current = @
+
+  # Add view to recalculate list
+  add: (view) ->
+    @views.push view
+
+  # Remove view from recalculate list
+  remove: (view) ->
+    @views.remove view
+
+  # Window scroll callback
+  scroll: ->
+    @recalculate()
+
+  # Recalculate all view positions
+  recalculate: (views) ->
+    return if (views || @views).isEmpty()
+
+    scrollTop      = @scrollTop()
+    scrollBottom   = scrollTop + @height()
+    documentHeight = @$document().height()
+    overflowHeight = documentHeight - @height()
+
+    if scrollTop > overflowHeight
+       extraGap = overflowHeight - scrollTop
+
+    for view in views || @views
+      view.calculatePosition(documentHeight, scrollTop, scrollBottom, extraGap || 0)
+
+  # Clear height cache and pass height to recalculate list
+  resize: ->
+    @_height = undefined
+
+    for view in @views
+      view.applyNewWindowSize()
+
+  # Check is height is enough for passed size
+  haveEnoughSpace: (height) ->
+    @height() >= height
+
+  # Returns and cache height
+  height: ->
+    @_height ||= @$el.height()
+
+  # Return current scroll top
+  scrollTop: ->
+    @$el.scrollTop()
+
+  # Document jQuery object
+  $document: ->
+    @$_document ||= $(document)
+
+# Create sticky window view
+new StickyAndTricky.StickyWindowView(el: window)
