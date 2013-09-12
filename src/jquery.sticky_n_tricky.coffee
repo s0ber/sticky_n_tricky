@@ -10,12 +10,15 @@
 DEFAULT_OPTIONS =
   padding: 0
   to:      'top'
+  zIndex:  null
 
 class StickyAndTricky.StickyView extends Backbone.View
 
   enabled: false
 
   initialize: ->
+    return unless @el
+
     Object.merge(@options, DEFAULT_OPTIONS, false, false)
     @setup()
 
@@ -29,7 +32,7 @@ class StickyAndTricky.StickyView extends Backbone.View
 
     @wrapEl()
     @copyStylesToWrapper()
-    @fixWidth()
+    @applyStyles()
 
     @stickyWindow().recalculate([@])
 
@@ -39,7 +42,7 @@ class StickyAndTricky.StickyView extends Backbone.View
 
     @clearPosition()
     @unwrapEl()
-    @restoreWidth()
+    @restoreStyles()
 
   # Check is window height is enough to stick el
   isCanBeSticky: ->
@@ -125,13 +128,14 @@ class StickyAndTricky.StickyView extends Backbone.View
   bottom: ->
     @wrapper().offset().top + @wrapper().outerHeight()
 
-  # Fix el width
-  fixWidth: ->
+  # Apply styles
+  applyStyles: ->
     @$el.css(width: @$el.width())
+    @$el.css(zIndex: @options.zIndex) if @options.zIndex?
 
-  # Restore el width
-  restoreWidth: ->
-    @$el.css(width: '')
+  # Restore styles
+  restoreStyles: ->
+    @$el.css(width: '', zIndex: '')
 
   # Copy css to wrapper
   copyStylesToWrapper: ->
