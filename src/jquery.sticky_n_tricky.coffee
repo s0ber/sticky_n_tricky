@@ -19,6 +19,7 @@ class StickyAndTricky.StickyView extends Backbone.View
   initialize: ->
     return unless @el
 
+    @options ?= {}
     Object.merge(@options, DEFAULT_OPTIONS, false, false)
     @setup()
 
